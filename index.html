@@ -1033,8 +1033,13 @@ function isConfirmed(t){
 }
 function confirmCount(t){
   const v=t.currentVersion||1;
-  const c=t.confirmations&&t.confirmations['v'+v]||{};
-  return Object.keys(c).length;
+  const conf=t.confirmations&&t.confirmations['v'+v]||{};
+  // 인코딩 키와 원본 키 중복 제거
+  const users=new Set();
+  Object.keys(conf).forEach(k=>{
+    try{users.add(decodeURIComponent(k));}catch(e){users.add(k);}
+  });
+  return users.size;
 }
 function unconfirmedList(){
   return topicList().filter(t=>t.status==='active'&&!isConfirmed(t));
@@ -1374,7 +1379,7 @@ function openDetail(id){
   const t=allTopics[id];if(!t)return;
   const v=t.currentVersion||1;
   const conf=t.confirmations&&t.confirmations['v'+v]||{};
-  const mine=!!conf[currentUser];
+  const mine=!!(conf[currentUser]||conf[encodeURIComponent(currentUser)]);
   document.getElementById('detailTitle').textContent=t.title||'';
   document.getElementById('editBtn').style.display='block'; // 모든 직원 수정 가능
   document.getElementById('deleteBtn').style.display=ADMIN.includes(currentUser)?'block':'none';
@@ -1438,20 +1443,22 @@ async function confirmTopic(id){
   const t=allTopics[id];if(!t)return;
   const v=t.currentVersion||1;
 
-  // 로컬 즉시 반영
+  // 로컬 즉시 반영 (인코딩 키로 저장)
+  const safeU=encodeURIComponent(currentUser);
   if(!allTopics[id].confirmations) allTopics[id].confirmations={};
   if(!allTopics[id].confirmations['v'+v]) allTopics[id].confirmations['v'+v]={};
-  allTopics[id].confirmations['v'+v][currentUser]=Date.now();
+  allTopics[id].confirmations['v'+v][safeU]=Date.now();
+  allTopics[id].confirmations['v'+v][currentUser]=Date.now(); // 구버전 호환
   openDetail(id);
+  renderTab(); // 홈 배지 즉시 업데이트
   toast('✓ 확인 완료!');
 
   if(id.startsWith('local_')) return;
   try{
     const safeUser=encodeURIComponent(currentUser);
-    const field='confirmations.v'+v+'.'+safeUser;
-    const update={};
-    update[field]=Date.now();
-    await updateDoc(doc(db,'topics',id),update);
+    const u={};
+    u['confirmations.v'+v+'.'+safeUser]=Date.now();
+    await updateDoc(doc(db,'topics',id),u);
   }catch(e){console.error('confirm save error',e);}
 }
 
@@ -1907,7 +1914,7 @@ function showAdminStatus(){
   const miss={};STAFF.forEach(s=>miss[s]=[]);
   topics.forEach(t=>{
     const v=t.currentVersion||1;const conf=t.confirmations&&t.confirmations['v'+v]||{};
-    STAFF.forEach(s=>{if(!conf[s])miss[s].push(t.title);});
+    STAFF.forEach(s=>{if(!conf[s]&&!conf[encodeURIComponent(s)])miss[s].push(t.title);});
   });
   let msg='미확인 현황\n\n';
   STAFF.forEach(s=>{
