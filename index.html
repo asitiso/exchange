@@ -1085,7 +1085,7 @@ function renderHome(el){
   const recent=topicList().filter(t=>t.status==='active'&&isConfirmed(t)).slice(0,10);
   let h='';
   if(ADMIN.includes(currentUser))
-    h+=`<div class="admin-tools"><span class="a-label" style="display:flex;align-items:center;gap:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg> 관리자</span>
+    h+=`<div class="admin-tools">
     <button class="a-btn" id="catMgmtBtn" style="margin-left:auto">카테고리</button>
     <button class="a-btn" id="staffMgmtBtn" style="margin-left:6px">직원관리</button>
     <button class="a-btn" id="adminStatusBtn" style="margin-left:6px">미확인</button>
