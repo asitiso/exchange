@@ -993,15 +993,34 @@ async function testFirebaseWrite(){
 let notifyReady=false, knownTopicIds=null;
 
 async function setupNotifications(){
-  if(!('Notification' in window)) return;
+  if(!('Notification' in window)){
+    console.warn('알림: 이 브라우저는 Notification API 미지원');
+    return;
+  }
+  console.log('알림 권한 현재 상태:', Notification.permission);
+  console.log('현재 프로토콜:', location.protocol);
+
+  if(Notification.permission==='denied'){
+    console.warn('알림: 사용자가 이전에 거부함. 브라우저 사이트 설정에서 직접 허용 필요');
+    return;
+  }
   if(Notification.permission==='default'){
-    try{ await Notification.requestPermission(); }catch(e){}
+    try{
+      const result = await Notification.requestPermission();
+      console.log('알림 권한 요청 결과:', result);
+    }catch(e){ console.error('알림 권한 요청 오류:',e); }
   }
   if('serviceWorker' in navigator){
-    try{ await navigator.serviceWorker.register('./sw.js'); }
+    try{
+      const reg = await navigator.serviceWorker.register('./sw.js');
+      console.log('SW 등록 성공:', reg.scope);
+    }
     catch(e){ console.warn('SW 등록 실패:',e); }
+  }else{
+    console.warn('알림: serviceWorker 미지원 (HTTPS 필요)');
   }
   notifyReady = Notification.permission==='granted';
+  console.log('알림 준비 상태:', notifyReady);
 }
 
 function showLocalNotification(title, body){
@@ -1137,6 +1156,19 @@ function renderHome(el){
   const uc=unconfirmedList();
   const recent=topicList().filter(t=>t.status==='active'&&isConfirmed(t)).slice(0,10);
   let h='';
+  // 알림 권한 배너 (허용 안 된 경우만 표시)
+  if('Notification' in window && Notification.permission!=='granted'){
+    const isDenied = Notification.permission==='denied';
+    h+=`<div style="background:${isDenied?'#FEF2F2':'#EEF2FF'};border:1px solid ${isDenied?'#FECACA':'#C7D2FE'};border-radius:12px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:18px">${isDenied?'🔕':'🔔'}</span>
+      <div style="flex:1;font-size:12.5px;color:var(--text2);line-height:1.4">
+        ${isDenied
+          ? '알림이 차단되어 있어요.<br>브라우저 사이트 설정에서 알림을 허용해주세요.'
+          : '새 변경사항을 놓치지 않으려면<br>알림을 켜주세요.'}
+      </div>
+      ${!isDenied?'<button id="enableNotifyBtn" style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;font-family:inherit">알림 켜기</button>':''}
+    </div>`;
+  }
   if(ADMIN.includes(currentUser))
     h+=`<div class="admin-tools">
     <button class="a-btn" id="catMgmtBtn" style="margin-left:auto">카테고리</button>
@@ -1157,6 +1189,24 @@ function renderHome(el){
     h+=`<div class="empty-state"><div class="e-ico" style="color:var(--border)"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg></div><p>등록된 변경사항이 없습니다<br>+ 버튼으로 첫 변경사항을 추가하세요</p></div>`;
   el.innerHTML=h;
   bindCards(el);
+  el.querySelector('#enableNotifyBtn')?.addEventListener('click', async()=>{
+    if(!('Notification' in window)){toast('이 브라우저는 알림을 지원하지 않아요');return;}
+    try{
+      const result = await Notification.requestPermission();
+      console.log('알림 권한 결과:', result);
+      if(result==='granted'){
+        toast('알림이 켜졌어요 🔔');
+        await setupNotifications();
+        renderTab(); // 배너 숨기기
+      }else if(result==='denied'){
+        toast('알림이 거부됐어요. 브라우저 설정에서 변경 가능해요');
+        renderTab();
+      }
+    }catch(e){
+      console.error('알림 권한 요청 오류:',e);
+      toast('알림 권한 요청 실패: '+e.message);
+    }
+  });
   el.querySelector('#catMgmtBtn')?.addEventListener('click', openCatModal);
   el.querySelector('#staffMgmtBtn')?.addEventListener('click', openStaffModal);
   el.querySelector('#adminStatusBtn')?.addEventListener('click',showAdminStatus);
