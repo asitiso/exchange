@@ -966,6 +966,7 @@ function login(name){
   document.getElementById('appScreen').style.display='flex';
   document.getElementById('userTag').textContent=name+(ADMIN.includes(name)?' 👑':'');
   listenTopics();
+  setupNotifications();
 }
 function logout(){
   if(!confirm('로그아웃 하시겠습니까?'))return;
@@ -988,6 +989,63 @@ async function testFirebaseWrite(){
   }
 }
 
+// ── 알림 시스템 ─────────────────────────────
+let notifyReady=false;
+let knownTopicIds=null; // 최초 로드 구분용
+
+async function setupNotifications(){
+  if(!('Notification' in window)) return;
+  if(Notification.permission==='default'){
+    try{ await Notification.requestPermission(); }catch(e){}
+  }
+  if('serviceWorker' in navigator){
+    try{
+      await navigator.serviceWorker.register('./sw.js');
+    }catch(e){ console.warn('SW 등록 실패:',e); }
+  }
+  notifyReady = Notification.permission==='granted';
+}
+
+function showLocalNotification(title, body){
+  if(Notification.permission!=='granted') return;
+  if('serviceWorker' in navigator && navigator.serviceWorker.controller){
+    navigator.serviceWorker.ready.then(reg=>{
+      reg.showNotification(title,{
+        body, icon:'./icon.png', badge:'./icon.png',
+        tag:'rulebook-'+Date.now(), vibrate:[100,50,100]
+      });
+    });
+  }else{
+    new Notification(title,{body});
+  }
+}
+
+// ── 알림 시스템 ─────────────────────────────
+let notifyReady=false, knownTopicIds=null;
+
+async function setupNotifications(){
+  if(!('Notification' in window)) return;
+  if(Notification.permission==='default'){
+    try{ await Notification.requestPermission(); }catch(e){}
+  }
+  if('serviceWorker' in navigator){
+    try{ await navigator.serviceWorker.register('./sw.js'); }
+    catch(e){ console.warn('SW 등록 실패:',e); }
+  }
+  notifyReady = Notification.permission==='granted';
+}
+
+function showLocalNotification(title, body){
+  if(typeof Notification==='undefined'||Notification.permission!=='granted') return;
+  if('serviceWorker' in navigator && navigator.serviceWorker.controller){
+    navigator.serviceWorker.ready.then(reg=>{
+      reg.showNotification(title,{body,tag:'rulebook-'+Date.now(),vibrate:[100,50,100]});
+    }).catch(()=>{ try{new Notification(title,{body});}catch(e){} });
+  }else{
+    try{ new Notification(title,{body}); }catch(e){}
+  }
+}
+
 function listenTopics(){
   loadGeminiKey();
   loadApps().then(()=>{ if(currentTab==='apps') renderTab(); });
@@ -996,10 +1054,36 @@ function listenTopics(){
   // Firestore 실시간 구독
   const q = query(collection(db,'topics'));
   onSnapshot(q, (snap)=>{
+    const prevIds = knownTopicIds;
     allTopics={};
     snap.forEach(d=>{
       allTopics[d.id]={...d.data(), id:d.id};
     });
+    const curIds = new Set(Object.keys(allTopics));
+
+    if(prevIds!==null){
+      curIds.forEach(id=>{
+        if(!prevIds.has(id)){
+          const t=allTopics[id];
+          if(t && t.createdBy!==currentUser){
+            showLocalNotification('새 변경사항: '+t.title, (t.category||'기타')+' · '+(t.createdBy||''));
+          }
+        }
+      });
+      curIds.forEach(id=>{
+        if(prevIds.has(id)){
+          const t=allTopics[id];
+          const prevV = window._prevVersions?.[id];
+          if(t && prevV && t.currentVersion>prevV){
+            showLocalNotification('변경사항 업데이트: '+t.title, 'v'+t.currentVersion+' · '+(t.category||''));
+          }
+        }
+      });
+    }
+    knownTopicIds = curIds;
+    window._prevVersions = {};
+    Object.values(allTopics).forEach(t=>window._prevVersions[t.id]=t.currentVersion);
+
     checkExpiry();
     renderTab();
   }, (err)=>{
